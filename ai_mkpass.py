@@ -1,26 +1,5 @@
 #!/usr/bin/env python3
 
-##########################################################################
-"""
- File         :   ai_mkpass.py
-
- Description  :   Generates secure passwords in several forms
-
- Author       :   Kevin Moore
-
- Version      :   0.3
-
- Date         :   2016.08.17
-
- Notes        :
-
-
- History      :
-      Date:         1/21/22  Info: Changed minimum pw length to 14 chars from 12           Author:BJH
-
-"""
-##########################################################################
-
 
 try:
     import sys
