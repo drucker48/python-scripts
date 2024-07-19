@@ -44,8 +44,6 @@ PKGS_TO_INSTALL = [
     "mesa-utils",
     ### End of nvidia stuff ###
     "code",
-    "aurora-engineering-workstation",
-    "aurora-linux-bootstrap",
     # ensure the updater GUI tool works
     "gnome-software-plugin-snap", 
     "tpm2-openssl",
