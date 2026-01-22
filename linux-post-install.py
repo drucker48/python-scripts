@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
-#Aurora Innovation, Inc. Proprietary and Confidential. Copyright 2024.
 
 # Automated provisioning of a software development workstation.
-# Depends on a Ubuntu 22.04 LTS base setup with IT's eng autoinstall.
+# Depends on a Ubuntu 22.04 LTS base setup with autoinstall.
 
 
 import argparse
