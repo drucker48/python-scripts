@@ -1,3 +1,4 @@
+
 # Author: D Rucker | IT Engineer 
 # Description: This script archives Slack channels that have been inactive for a specified number of days.
 # It uses the Slack Web API and requires a bot token with appropriate scopes.
@@ -28,7 +29,7 @@ class ProcessStatus(Enum):
 
 LOGGER = logging.getLogger("slack-archiver")
 
-ARCHIVE_LAST_MESSAGE_AGE_DAYS = 60  # Number of days of inactivity before archiving
+ARCHIVE_LAST_MESSAGE_AGE_DAYS = 90  # Number of days of inactivity before archiving
 
 # Rate limiting configuration
 API_DELAY_SECONDS = float(os.environ.get('SLACK_API_DELAY', '1.0'))  # Delay between API calls
@@ -36,11 +37,8 @@ BATCH_DELAY_SECONDS = float(os.environ.get('SLACK_BATCH_DELAY', '5.0'))  # Delay
 
 # Channels that should never be archived (case-insensitive matching)
 PROTECTED_CHANNELS = [
-    'general',
-    'announcements', 
-    'it-support',
-    'on-call',
-    'incidents'
+    'announcements',
+    'general'
 ]
 
 # Pre-compute lowercased set for O(1) lookup performance
@@ -53,7 +51,7 @@ OUTPUT_DIR = os.environ.get('SLACK_ARCHIVER_OUTPUT_DIR', './archived_channels')
 ########### END VARIABLES TO SET ############
 
 
-########### FUNCTIONS ############
+########### FUNCTIONS ###########
 def ensure_log_directory(log_file_path):
     """Ensure the log directory exists, create it if it doesn't."""
     log_dir = os.path.dirname(log_file_path)
@@ -97,6 +95,11 @@ def is_protected_channel(channel_name):
     return channel_name.lower() in PROTECTED_CHANNELS_LOWER
 
 
+def is_slack_connect_channel(channel):
+    """Check if channel is a Slack Connect channel (shared with external orgs)."""
+    return channel.get('is_ext_shared', False)
+
+
 def leave_channel_if_needed(client, channel_id, channel_name):
     """Leave channel if bot is a member and it's not a protected channel."""
     try:
@@ -126,7 +129,7 @@ def ensure_output_directory(output_dir):
         return fallback_dir
 
 
-def channel_has_recent_messages(client, my_user_id, channel_id):
+def channel_has_recent_messages(client, my_user_id, channel_id, channel_name="Unknown"):
     """Check if channel has recent messages within the specified timeframe."""
     try:
         # Calculate fresh timestamp to avoid stale comparisons
@@ -145,9 +148,13 @@ def channel_has_recent_messages(client, my_user_id, channel_id):
         # Filter out message about our bot joining this channel
         real_messages = list(filter(lambda m: m.get('user') != my_user_id, response['messages']))
         # If we found at least one - return True, if not - False
-        return len(real_messages) > 0
+        has_messages = len(real_messages) > 0
+        if not has_messages:
+            LOGGER.info(f"#{channel_name}: No recent messages found (inactive for {ARCHIVE_LAST_MESSAGE_AGE_DAYS}+ days)")
+        return has_messages
     except Exception as e:
-        LOGGER.error(f"Error checking messages for channel {channel_id}: {e}")
+        LOGGER.error(f"Error checking messages for channel #{channel_name} ({channel_id}): {e}")
+        LOGGER.warning(f"#{channel_name}: Treating as active due to error (safety fallback)")
         # Return True to be safe - don't archive if we can't check
         return True
 
@@ -189,14 +196,19 @@ def process_channel(client, my_user_id, channel, csv_writer):
     channel_id = channel.get('id', 'Unknown')
     
     try:
+        # Check if this is a Slack Connect channel
+        if is_slack_connect_channel(channel):
+            LOGGER.info(f"#{channel_name}: Slack Connect channel (external) - skipping")
+            return ProcessStatus.PROTECTED
+        
         # Check if this is a protected channel
         if is_protected_channel(channel_name):
             LOGGER.info(f"#{channel_name}: protected channel - skipping")
             return ProcessStatus.PROTECTED
         
         # Check if channel has recent activity
-        if channel_has_recent_messages(client, my_user_id, channel_id):
-            LOGGER.info(f"#{channel_name}: has recent messages")
+        if channel_has_recent_messages(client, my_user_id, channel_id, channel_name):
+            LOGGER.info(f"#{channel_name}: has recent messages - keeping active")
             
             # Leave the channel since it's active and we don't need to monitor it
             if channel.get('is_member', False):
@@ -278,11 +290,11 @@ def archive_inactive_channels(client, my_user_id):
                         
                         # Add batch delay every 10 channels to avoid overwhelming the API
                         if i > 0 and i % 10 == 0:
-                            LOGGER.debug(f"Processed {i} channels, pausing for {BATCH_DELAY_SECONDS}s...")
+                            LOGGER.info(f"Processed {i} channels, pausing for {BATCH_DELAY_SECONDS}s...")
                             time.sleep(BATCH_DELAY_SECONDS)
                         
-                        # Join channel if we're not already a member (only for non-protected channels)
-                        if not channel.get('is_member', False) and not is_protected_channel(channel_name):
+                        # Join channel if we're not already a member (skip protected and Slack Connect channels)
+                        if not channel.get('is_member', False) and not is_protected_channel(channel_name) and not is_slack_connect_channel(channel):
                             try:
                                 client.conversations_join(channel=channel_id)
                                 LOGGER.debug(f"Joined channel #{channel_name}")
