@@ -6,7 +6,7 @@ import csv
 
 # Instantiating with a Python dictionary in the constructor
 config = {
-    'orgUrl': 'https://findheadway.okta.com',
+    'orgUrl': 'https://company_name.okta.com',
     'token': ''
 }
 
